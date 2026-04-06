@@ -153,23 +153,45 @@ class ThumbListWidget(QListWidget):
             drag.exec(Qt.CopyAction, Qt.CopyAction)
 
     def dragEnterEvent(self, event):
+        # 内部ドラッグ（並び替え）は標準処理へ
+        if event.source() is self and self.allow_internal_reorder:
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+            return
+
+        # 外部（左→右など）のドロップはカスタム MIME を受ける
         if event.mimeData().hasFormat(MIME_TYPE) and self.allow_external_drop:
-            event.acceptProposedAction()
-        elif self.allow_internal_reorder:
-            super().dragEnterEvent(event)
-        else:
-            event.ignore()
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            return
+
+        event.ignore()
+
 
     def dragMoveEvent(self, event):
+        if event.source() is self and self.allow_internal_reorder:
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+            return
+
         if event.mimeData().hasFormat(MIME_TYPE) and self.allow_external_drop:
-            event.acceptProposedAction()
-        elif self.allow_internal_reorder:
-            super().dragMoveEvent(event)
-        else:
-            event.ignore()
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            return
+
+        event.ignore()
 
     def dropEvent(self, event):
-        # 右側で左からのドロップを受けて追加する
+        # 内部移動は QListWidget 標準の dropEvent に任せる
+        if event.source() is self and self.allow_internal_reorder:
+            event.setDropAction(Qt.MoveAction)
+            super().dropEvent(event)
+
+            self.doItemsLayout() # ドロップ後のレイアウト更新（アイコンの位置がずれることがあるため）
+            self.viewport().update()
+            return
+
+        # 外部からのドロップ（左→右）だけを自前処理で「追加」
         if event.mimeData().hasFormat(MIME_TYPE) and self.allow_external_drop:
             data = bytes(event.mimeData().data(MIME_TYPE))
             try:
@@ -191,12 +213,8 @@ class ThumbListWidget(QListWidget):
                 it.setData(Qt.UserRole, pr)
                 self.insertItem(insert_row + i, it)
 
-            event.acceptProposedAction()
-            return
-
-        # 内部移動（並び替え）は標準処理に任せる
-        if self.allow_internal_reorder:
-            super().dropEvent(event)
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
             return
 
         event.ignore()
@@ -251,6 +269,7 @@ class MainWindow(QMainWindow):
         self.left_drop = PdfDropLabel(self.load_pdf)
         self.left_list = ThumbListWidget(allow_external_drop=False, allow_internal_reorder=False)
         self.right_list = ThumbListWidget(allow_external_drop=True, allow_internal_reorder=True)
+        self.right_list.setDefaultDropAction(Qt.MoveAction)
 
         self.left_title = QLabel("左：PDF全ページ（ドラッグで右へ追加）")
         self.right_title = QLabel("右：出力するページ（並び替え・削除可）")
