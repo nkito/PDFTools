@@ -14,6 +14,7 @@
 #  $ pyinstaller --onefile --noconsole pdfmerger.py 
 #    (distフォルダ内にバイナリができる)
 #
+# 以下は LLM 生成コード
 
 import sys
 import os
@@ -107,7 +108,7 @@ class PdfMergeApp(QWidget):
         layout = QVBoxLayout(self)
 
         self.list = PdfListWidget()
-        self.list.setDragDropMode(QAbstractItemView.InternalMove)
+        # self.list.setDragDropMode(QAbstractItemView.InternalMove)
 
         layout.addWidget(QLabel("PDFファイル一覧（ドラッグで追加 / 並べ替え）"))
         layout.addWidget(self.list)
