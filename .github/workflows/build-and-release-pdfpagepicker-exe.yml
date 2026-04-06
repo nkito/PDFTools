@@ -1,4 +1,4 @@
-name: Build and optionally publish PDFMerger for Windows
+name: Build and optionally publish PDFPagePicker for Windows
 
 on:
   workflow_dispatch:
@@ -6,12 +6,12 @@ on:
       script_path:
         description: "exe化する Python スクリプトのパス (リポジトリルートからの相対パス)"
         required: true
-        default: "pdfmerger.py"
+        default: "pdfpagepicker.py"
         type: string
       exe_name:
         description: "出力する exe 名 (拡張子不要)"
         required: true
-        default: "pdfmerger"
+        default: "pdfpagepicker"
         type: string
       release_tag:
         description: "Release に登録するタグ名 (空なら Release は作らない)"
@@ -58,7 +58,7 @@ jobs:
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PDFMerger-windows
+          name: PDFPagePicker-windows
           path: dist/${{ github.event.inputs.exe_name }}.exe
 
       - name: Create GitHub Release and upload exe
