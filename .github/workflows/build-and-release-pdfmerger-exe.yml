@@ -57,7 +57,7 @@ jobs:
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-exe
+          name: PDFMerger-windows
           path: dist/${{ github.event.inputs.exe_name }}.exe
 
       - name: Create GitHub Release and upload exe

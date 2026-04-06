@@ -2,7 +2,7 @@
 # * 環境設定
 # 
 #  $ python3 -m venv _pdf
-#  $ _pdf\script\activate
+#  $ .\_pdf\Scripts\activate
 #  $ pip install pyside6 pypdf2 reportlab pyinstaller
 #
 # * 使用方法

@@ -2,7 +2,7 @@
 # * 環境設定
 # 
 #  $ python3 -m venv _pdf
-#  $ _pdf\script\activate
+#  $ .\_pdf\Scripts\activate
 #  $ pip install pyside6 pymupdf
 #
 # * 使用方法
