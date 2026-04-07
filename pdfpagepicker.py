@@ -14,19 +14,19 @@
 #  $ pyinstaller --onefile --noconsole pdfpagepicker.py
 #    (distフォルダ内にバイナリができる)
 #
-# 以下は LLM 生成コード
+# 以下は LLM 生成コードをもとに改変
 
 import sys
 import os
 import json
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QSize, QMimeData, QByteArray
+from PySide6.QtCore import Qt, QSize, QMimeData, QByteArray, QPoint
 from PySide6.QtGui import QAction, QIcon, QPixmap, QImage, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton, QFileDialog,
     QHBoxLayout, QVBoxLayout, QListWidget, QListWidgetItem, QSplitter,
-    QMessageBox, QAbstractItemView, QMenu
+    QMessageBox, QAbstractItemView, QMenu, QListView
 )
 
 import fitz  # PyMuPDF
@@ -80,8 +80,15 @@ class ThumbListWidget(QListWidget):
         self.setDropIndicatorShown(True)
 
         if allow_internal_reorder:
-            # 内部移動による並び替え
-            self.setDragDropMode(QAbstractItemView.InternalMove)
+            self.setGridSize(QSize(210, 240))   # アイコン+ラベル+余白。好みで調整
+            self.setWrapping(True)
+            self.setFlow(QListView.LeftToRight)
+
+            # “上書き”ではなく“挿入”扱いにする
+            self.setDragDropOverwriteMode(False)
+
+            # 内部移動は自前処理するので DragDrop に
+            self.setDragDropMode(QAbstractItemView.DragDrop)
             self.setDefaultDropAction(Qt.MoveAction)
         else:
             # 左側はドラッグのみ（コピー用途）
@@ -181,13 +188,76 @@ class ThumbListWidget(QListWidget):
 
         event.ignore()
 
-    def dropEvent(self, event):
-        # 内部移動は QListWidget 標準の dropEvent に任せる
-        if event.source() is self and self.allow_internal_reorder:
-            event.setDropAction(Qt.MoveAction)
-            super().dropEvent(event)
+    def _event_pos_in_viewport(self, event) -> QPoint:
+        """eventの座標をviewport座標に揃える（保険）。"""
+        p = event.position().toPoint()  # Qt6
+        # dropEvent/dragMoveEvent が viewport に届く環境もあれば、widget に届く環境もあるため補正
+        if self.viewport().rect().contains(p):
+            return p
+        return self.viewport().mapFrom(self, p)
 
-            self.doItemsLayout() # ドロップ後のレイアウト更新（アイコンの位置がずれることがあるため）
+    def _calc_insert_row_by_grid(self, event) -> int:
+        """スクロール対応：pos からグリッド基準の挿入rowを決める"""
+        gs = self.gridSize()
+        if gs.width() <= 0 or gs.height() <= 0:
+            return self.count()
+
+        # 1) viewport座標
+        vp = self._event_pos_in_viewport(event)
+
+        # 2) スクロール量を足して“コンテンツ座標”に
+        x = vp.x() + self.horizontalScrollBar().value()
+        y = vp.y() + self.verticalScrollBar().value()
+
+        # 3) 列数（viewport幅基準でOK：IconModeの折り返しは表示幅に依存する）
+        cols = max(1, self.viewport().width() // gs.width())
+
+        col = max(0, x // gs.width())
+        row = max(0, y // gs.height())
+
+        insert_row = row * cols + col
+        cell_x = x % gs.width()
+        if cell_x > gs.width() * 0.55:
+            insert_row += 1
+
+        # 範囲に丸める（末尾も許容）
+        insert_row = max(0, min(insert_row, self.count()))
+        return insert_row
+
+    def dropEvent(self, event):
+        # 内部並び替え（右側での移動）を自前で処理する
+        if event.source() is self and self.allow_internal_reorder:
+            target = self._calc_insert_row_by_grid(event)
+
+            # 選択されているアイテム（移動対象）
+            selected = [it for it in self.selectedItems()]
+            if not selected:
+                event.ignore()
+                return
+
+            # 選択行を確定（重複排除）
+            sel_rows = sorted({self.row(it) for it in selected})
+
+            # いったんアイテムを取り出す（後ろから取るとインデックスが崩れない）
+            moved_items = []
+            for r in reversed(sel_rows):
+                moved_items.append(self.takeItem(r))
+            moved_items.reverse()  # 元順保持
+
+            # 取り出した行が target より前にある数だけ target を詰める
+            for r in sel_rows:
+                if r < target:
+                    target -= 1
+
+            # target に挿入
+            for i, it in enumerate(moved_items):
+                self.insertItem(target + i, it)
+                it.setSelected(True)
+
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+
+            # 後処理は update 程度で十分（doItemsLayout は基本不要）
             self.viewport().update()
             return
 
@@ -201,9 +271,7 @@ class ThumbListWidget(QListWidget):
                 return
 
             # ドロップ位置の行
-            drop_pos = event.position().toPoint()
-            target_item = self.itemAt(drop_pos)
-            insert_row = self.row(target_item) if target_item else self.count()
+            target_item = self._calc_insert_row_by_grid(event)
 
             for i, ref in enumerate(refs):
                 pr = PageRef(ref["src_path"], int(ref["page_index"]))
@@ -211,7 +279,7 @@ class ThumbListWidget(QListWidget):
                 # （アイコンは MainWindow 側で作る）
                 it = QListWidgetItem(f"p.{pr.page_index + 1}")
                 it.setData(Qt.UserRole, pr)
-                self.insertItem(insert_row + i, it)
+                self.insertItem(target_item + i, it)
 
             event.setDropAction(Qt.CopyAction)
             event.accept()
@@ -271,11 +339,11 @@ class MainWindow(QMainWindow):
         self.right_list = ThumbListWidget(allow_external_drop=True, allow_internal_reorder=True)
         self.right_list.setDefaultDropAction(Qt.MoveAction)
 
-        self.left_title = QLabel("左：PDF全ページ（ドラッグで右へ追加）")
-        self.right_title = QLabel("右：出力するページ（並び替え・削除可）")
+        self.left_title = QLabel("PDF全ページ（ドラッグで右へ追加）")
+        self.right_title = QLabel("出力するページ")
 
         self.btn_export = QPushButton("PDF出力…")
-        self.btn_clear_right = QPushButton("右側を全消去")
+        self.btn_clear_right = QPushButton("出力するページをリセット")
         self.btn_clear_right.clicked.connect(self.right_list.clear)
         self.btn_export.clicked.connect(self.export_pdf)
 
@@ -293,8 +361,9 @@ class MainWindow(QMainWindow):
 
         bottom_bar = QWidget()
         bottom_l = QHBoxLayout(bottom_bar)
-        bottom_l.addWidget(self.btn_clear_right)
         bottom_l.addStretch(1)
+        bottom_l.addWidget(self.btn_clear_right)
+        bottom_l.setSpacing(40)
         bottom_l.addWidget(self.btn_export)
 
         splitter = QSplitter(Qt.Horizontal)
