@@ -56,12 +56,17 @@ jobs:
             --name pdfpagepicker `
             pdfpagepicker.py
 
-      - name: Upload exe artifact
+      - name: Upload PDFMerger artifact
         uses: actions/upload-artifact@v4
         with:
           name: PDFMerger-windows
           path: dist/pdfmerger.exe
-                dist/pdfpagepicker.exe
+
+      - name: Upload PDFPagePicker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFPagePicker-windows
+          path: dist/pdfpagepicker.exe
 
       - name: Create GitHub Release and upload exe
         if: ${{ github.event.inputs.release_tag != '' }}
